@@ -27,8 +27,7 @@ import {
 } from "lucide-react";
 import "./App.css";
 
-const API = `${import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001"}/api/memories`;
-
+const API = `${import.meta.env.VITE_API_BASE_URL}/api/memories`;
 function formatDate(value, withTime = false) {
   if (!value) return "No due date";
 
