@@ -1,13 +1,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import (
-    DateTime,
-    Float,
-    String,
-    Text,
-    UniqueConstraint,
-)
+from sqlalchemy import DateTime, Float, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -87,45 +81,8 @@ class Memory(Base):
         nullable=False,
     )
 
-    # Existing email reminder tracking; preserved.
     reminder_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         default=None,
-    )
-
-
-class PushSubscription(Base):
-    __tablename__ = "push_subscriptions"
-    __table_args__ = (
-        UniqueConstraint(
-            "endpoint",
-            name="uq_push_subscription_endpoint",
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(
-        primary_key=True,
-        index=True,
-    )
-
-    endpoint: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-    )
-
-    p256dh: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-    )
-
-    auth: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=utc_now,
-        nullable=False,
     )

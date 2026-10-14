@@ -1,6 +1,6 @@
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
@@ -15,7 +15,7 @@ def extract_memory(raw_text: str) -> dict:
 
     result = {
         "raw_text": text,
-        "title": text[:200],
+        "title": re.sub(r"\s+", " ", text).strip()[:200],
         "category": "other",
         "person_name": None,
         "item_name": None,
@@ -24,59 +24,52 @@ def extract_memory(raw_text: str) -> dict:
         "location": None,
     }
 
-    # Recognize reminders such as:
-    # "Remind me in 2 minutes"
-    # "Send me a reminder in 1 hour"
-    # "Remind me to call Rahul in 3 days"
     reminder_requested = bool(
         re.search(r"\bremind(?:er)?\b", lowered)
     )
 
     relative_match = re.search(
-        r"\bin\s+(\d+)\s*"
-        r"(minutes?|mins?|hours?|hrs?|days?|weeks?)\b",
+        r"\bin\s+(\d+)\s*(minutes?|mins?|hours?|hrs?|days?|weeks?)\b",
         lowered,
     )
 
+    due = None
+
     if reminder_requested and relative_match:
-        amount = int(relative_match.group(1))
+        count = int(relative_match.group(1))
         unit = relative_match.group(2)
 
         if unit.startswith(("minute", "min")):
-            delta = timedelta(minutes=amount)
+            delta = timedelta(minutes=count)
         elif unit.startswith(("hour", "hr")):
-            delta = timedelta(hours=amount)
+            delta = timedelta(hours=count)
         elif unit.startswith("day"):
-            delta = timedelta(days=amount)
+            delta = timedelta(days=count)
         else:
-            delta = timedelta(weeks=amount)
+            delta = timedelta(weeks=count)
 
-        # Store local India time as a naive datetime for compatibility
-        # with databases that store local datetimes without timezone info.
-        result["due_at"] = (now + delta).replace(tzinfo=None)
+        due = now + delta
 
-    # Recognize common calendar reminders.
     elif reminder_requested and "tomorrow" in lowered:
-        result["due_at"] = (
-            (now + timedelta(days=1))
-            .replace(hour=10, minute=0, second=0, microsecond=0)
-            .replace(tzinfo=None)
+        due = (now + timedelta(days=1)).replace(
+            hour=10, minute=0, second=0, microsecond=0
         )
 
     elif reminder_requested and "next week" in lowered:
-        result["due_at"] = (
-            (now + timedelta(days=7))
-            .replace(hour=10, minute=0, second=0, microsecond=0)
-            .replace(tzinfo=None)
+        due = (now + timedelta(days=7)).replace(
+            hour=10, minute=0, second=0, microsecond=0
         )
 
     elif reminder_requested and "today" in lowered:
-        due = now.replace(hour=18, minute=0, second=0, microsecond=0)
-
+        due = now.replace(
+            hour=18, minute=0, second=0, microsecond=0
+        )
         if due <= now:
             due = now + timedelta(minutes=2)
 
-        result["due_at"] = due.replace(tzinfo=None)
+    # Store reminder timestamps in UTC for production database consistency.
+    if due is not None:
+        result["due_at"] = due.astimezone(timezone.utc)
 
     # Extract a person's name.
     person_patterns = [
@@ -91,7 +84,7 @@ def extract_memory(raw_text: str) -> dict:
             result["person_name"] = match.group(1)
             break
 
-    # Extract amounts such as ₹500, Rs. 500, or 500 rupees.
+    # Extract common monetary formats.
     amount_pattern = (
         r"(?:₹|rs\.?\s*)"
         r"(\d+(?:,\d{3})*(?:\.\d{1,2})?)"
@@ -104,12 +97,14 @@ def extract_memory(raw_text: str) -> dict:
 
     if amount_match:
         amount_text = next(
-            group for group in amount_match.groups()
+            group
+            for group in amount_match.groups()
             if group is not None
         )
         result["amount"] = float(amount_text.replace(",", ""))
 
-    # Extract an item from "I lent Rahul my calculator".
+    # Extract items from notes such as:
+    # "I lent Rahul my calculator yesterday."
     item_match = re.search(
         r"\blent\s+[A-Z][a-z]+\s+my\s+(.+?)"
         r"(?=\s+(?:yesterday|today|tomorrow|next week|last week)\b|[.!?,]|$)",
@@ -129,7 +124,7 @@ def extract_memory(raw_text: str) -> dict:
     elif result["person_name"]:
         result["category"] = "people"
 
-    # Create clearer titles where possible.
+    # Create clearer titles when possible.
     if result["person_name"] and result["item_name"]:
         result["title"] = (
             f"Collect {result['item_name']} from "

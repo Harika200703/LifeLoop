@@ -91,7 +91,7 @@ def check_due_reminders() -> None:
 
                 send_reminder_email(memory)
 
-                memory.reminder_sent_at = datetime.now(LOCAL_TZ)
+                memory.reminder_sent_at = datetime.now(ZoneInfo("UTC"))
                 db.commit()
 
                 print(
